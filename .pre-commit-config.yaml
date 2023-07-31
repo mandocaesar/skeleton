@@ -1,0 +1,12 @@
+repos:
+    - repo: https://github.com/zricethezav/gitleaks
+      rev: v7.5.0
+      hooks:
+          - id: gitleaks
+            args: ['-v']
+    - repo: https://github.com/compilerla/conventional-pre-commit
+      rev: v2.1.1
+      hooks:
+        - id: conventional-pre-commit
+          stages: [commit-msg]
+          args: [feat, fix, docs, style, refactor, perf, test, chore] # list of Conventional Commits types to allow, see: https://jamtangan.atlassian.net/wiki/spaces/EN/pages/2327543902/Conventional+Commit

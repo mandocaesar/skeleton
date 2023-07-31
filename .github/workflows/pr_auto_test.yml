@@ -1,0 +1,54 @@
+name: PR Auto Test
+
+env:
+  REPO_NAME: github.com/machtwatch/catalyst-go-skeleton
+  APP_NAME: voila-uf-customers-be
+  IMAGE_REGISTRY: 491248485740.dkr.ecr.ap-southeast-1.amazonaws.com
+  VERSION_GIT_COMMIT: $GITHUB_SHA
+  AWS_DEFAULT_REGION: ap-southeast-1
+  BASE_BRANCH: ${{ github.head_ref }}
+on:
+  pull_request:
+    branches: [ master, development ] 
+
+jobs:
+  sonarqube_check:
+    if: github.event_name == 'pull_request'
+    name: Sonarqube
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: actions/setup-go@v2
+        with:
+          go-version: '1.18'
+      - run: |
+          git config --global url."https://${{ secrets.ACCESS_TOKEN }}@github.com".insteadOf "https://github.com"
+          go version
+          go test -short -coverprofile coverage.out ./... && go tool cover -func=coverage.out
+      - uses: docker://sonarsource/sonar-scanner-cli:latest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+  test_stage:
+    if: github.event_name == 'pull_request'
+    name: Testing Script
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: actions/setup-go@v2
+        with:
+          go-version: '1.18'
+      - run: |
+          go env -w GOPRIVATE=github.com/${GITHUB_ACTOR}
+          git config --global url."https://${{ secrets.ACCESS_TOKEN }}@github.com".insteadOf "https://github.com"          
+          go install github.com/swaggo/swag/cmd/swag@latest           
+          go get github.com/newm4n/goornogo
+          go install github.com/newm4n/goornogo
+          go test ./... -v -short -covermode=count -coverprofile=coverage.out
+          goornogo -i coverage.out -c 65

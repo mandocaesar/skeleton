@@ -1,0 +1,205 @@
+name: New Dev Workflow Auto
+
+on:
+  push:
+    branches:
+      - master
+
+env:
+  REPO_NAME: github.com/machtwatch/catalyst-go-skeleton
+  ENVIRONMENT: dev
+  IMAGE_REGISTRY: 491248485740.dkr.ecr.ap-southeast-1.amazonaws.com
+  APP_NAME: voila-uf-customers-be
+  AWS_DEFAULT_REGION: ap-southeast-1
+  KUBENAMESPACE: voila-dev
+  KUBECLUSTER: Catalyst-DevStaging
+  AUTH_SECRET: secret
+
+jobs:
+  dev_packaging_stage:
+    runs-on: catalyst-runner
+    container: 
+      image: 491248485740.dkr.ecr.ap-southeast-1.amazonaws.com/docker:20.10.17-cli-alpine3.16
+      credentials:
+        username: AWS
+        password: ${{ secrets.ECR_PASSWORD }}
+    steps:
+      - name: Github Clone / Checkout
+        uses: actions/checkout@v3
+      - name: Configure AWS credentials from Test account
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-southeast-1
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+      - name: Get Short SHA
+        id: short-sha
+        run: echo "VERSION_GIT_COMMIT=`echo ${GITHUB_SHA} | cut -c1-8`" >> $GITHUB_ENV
+      - name: Vault
+        uses: hashicorp/vault-action@v2.4.0
+        with:
+          url: http://vault.ctlyst.id:8200
+          token: ${{ secrets.VAULT_TOKEN }}
+          secrets: |
+            development/data/voila-uf-customers-be APP_PORT;
+            development/data/voila-uf-customers-be FRONTEND_URL;
+            development/data/voila-uf-customers-be POSTGRES_HOST;
+            development/data/voila-uf-customers-be POSTGRES_PORT;
+            development/data/voila-uf-customers-be POSTGRES_USERNAME;
+            development/data/voila-uf-customers-be POSTGRES_PASSWORD;
+            development/data/voila-uf-customers-be POSTGRES_DATABASE;
+            development/data/voila-uf-customers-be POSTGRES_SSL_MODE;
+            development/data/voila-uf-customers-be REDIS_HOST;
+            development/data/voila-uf-customers-be REDIS_PORT;
+            development/data/voila-uf-customers-be REDIS_PASSWORD;
+            development/data/voila-uf-customers-be JWT_METHOD;
+            development/data/voila-uf-customers-be JWT_SECRET;
+            development/data/voila-uf-customers-be JWT_LIFESPAN_AUTHTOKEN;
+            development/data/voila-uf-customers-be JWT_LIFESPAN_REFRESHTOKEN;
+            development/data/voila-uf-customers-be JWT_DOMAIN;
+            development/data/voila-uf-customers-be JWT_AUDIENCE;
+            development/data/voila-uf-customers-be JWKS_URL;
+            development/data/voila-uf-customers-be JWKS_REFRESH;
+            development/data/voila-uf-customers-be JWKS_TTL;
+            development/data/voila-uf-customers-be RUNDECK_URL;
+            development/data/voila-uf-customers-be RUNDECK_TOKEN;
+            development/data/voila-uf-customers-be RUNDECK_PROJECT;
+            development/data/voila-uf-customers-be RUNDECK_JOB_ID;
+            development/data/voila-uf-customers-be RUNDECK_JOB_BEARER_TOKEN;
+            development/data/voila-uf-customers-be NOTIFICATION_SERVICE_BASE_URL;
+            development/data/voila-uf-customers-be NOTIFICATION_SERVICE_SENDER_EMAIL;
+            development/data/voila-uf-customers-be NOTIFICATION_SERVICE_SENDER_NAME;
+            development/data/voila-uf-customers-be SERVER_GRACEFUL_SHUTDOWN_S;
+            development/data/voila-uf-customers-be DEBUG;
+            development/data/voila-uf-customers-be NEWRELIC_APP_NAME;
+            development/data/voila-uf-customers-be NEWRELIC_LICENSE;
+            development/data/voila-uf-customers-be RABBITMQ_URI;
+            development/data/voila-uf-customers-be RABBITMQ_CONFIG_DURABLE;
+            development/data/voila-uf-customers-be RABBITMQ_CONFIG_EXCLUSIVE;
+            development/data/voila-uf-customers-be RABBITMQ_CONFIG_AUTO_DELETED;
+            development/data/voila-uf-customers-be RABBITMQ_CONFIG_INTERNAL;
+            development/data/voila-uf-customers-be RABBITMQ_CONFIG_NO_WAIT;
+            development/data/voila-uf-customers-be BIFROST_URI;
+            development/data/voila-uf-customers-be BIFROST_TENANT_CODE;
+            development/data/voila-uf-customers-be IMAGE_MAX_SIZE_IN_MB;
+            development/data/voila-uf-customers-be IMAGE_MAX_WIDTH;
+            development/data/voila-uf-customers-be IMAGE_MAX_HEIGHT;
+            development/data/voila-uf-customers-be IMAGE_MIN_WIDTH;
+            development/data/voila-uf-customers-be IMAGE_MIN_HEIGHT;
+      - name: Replace ENV With Value
+        id: replace-env
+        run: |
+          apk add gettext
+          envsubst < Dockerfile > Dockerfile.temp && rm Dockerfile && mv Dockerfile.temp Dockerfile
+      - name: Docker Build and Push
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{env.IMAGE_REGISTRY}}/${{env.APP_NAME}}:${{env.VERSION_GIT_COMMIT}}
+            ${{env.IMAGE_REGISTRY}}/${{env.APP_NAME}}:${{env.ENVIRONMENT}}-${{env.VERSION_GIT_COMMIT}}
+            ${{env.IMAGE_REGISTRY}}/${{env.APP_NAME}}:${{env.ENVIRONMENT}}-latest
+
+  dev_deploying_stage:
+    name: Deploy Image
+    runs-on: catalyst-runner
+    container:
+      image: 491248485740.dkr.ecr.ap-southeast-1.amazonaws.com/alpine/k8s:1.20.7
+      credentials:
+        username: AWS
+        password: ${{ secrets.ECR_PASSWORD }}
+    needs: [dev_packaging_stage]
+    steps:
+      - name: Github Clone / Checkout
+        uses: actions/checkout@v3
+      - name: Configure AWS credentials from Test account
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-southeast-1
+      - name: Get Short SHA
+        id: short-sha
+        run: echo "VERSION_GIT_COMMIT=`echo ${GITHUB_SHA} | cut -c1-8`" >> $GITHUB_ENV
+      - name: Vault
+        uses: hashicorp/vault-action@v2.4.0
+        with:
+          url: http://vault.ctlyst.id:8200
+          token: ${{ secrets.VAULT_TOKEN }}
+          secrets: |
+            development/data/voila-uf-customers-be APP_PORT;
+            development/data/voila-uf-customers-be FRONTEND_URL;
+            development/data/voila-uf-customers-be POSTGRES_HOST;
+            development/data/voila-uf-customers-be POSTGRES_PORT;
+            development/data/voila-uf-customers-be POSTGRES_USERNAME;
+            development/data/voila-uf-customers-be POSTGRES_PASSWORD;
+            development/data/voila-uf-customers-be POSTGRES_DATABASE;
+            development/data/voila-uf-customers-be POSTGRES_SSL_MODE;
+            development/data/voila-uf-customers-be REDIS_HOST;
+            development/data/voila-uf-customers-be REDIS_PORT;
+            development/data/voila-uf-customers-be REDIS_PASSWORD;
+            development/data/voila-uf-customers-be JWT_METHOD;
+            development/data/voila-uf-customers-be JWT_SECRET;
+            development/data/voila-uf-customers-be JWT_LIFESPAN_AUTHTOKEN;
+            development/data/voila-uf-customers-be JWT_LIFESPAN_REFRESHTOKEN;
+            development/data/voila-uf-customers-be JWT_DOMAIN;
+            development/data/voila-uf-customers-be JWT_AUDIENCE;
+            development/data/voila-uf-customers-be JWKS_URL;
+            development/data/voila-uf-customers-be JWKS_REFRESH;
+            development/data/voila-uf-customers-be JWKS_TTL;
+            development/data/voila-uf-customers-be RUNDECK_URL;
+            development/data/voila-uf-customers-be RUNDECK_TOKEN;
+            development/data/voila-uf-customers-be RUNDECK_PROJECT;
+            development/data/voila-uf-customers-be RUNDECK_JOB_ID;
+            development/data/voila-uf-customers-be RUNDECK_JOB_BEARER_TOKEN;
+            development/data/voila-uf-customers-be NOTIFICATION_SERVICE_BASE_URL;
+            development/data/voila-uf-customers-be NOTIFICATION_SERVICE_SENDER_EMAIL;
+            development/data/voila-uf-customers-be NOTIFICATION_SERVICE_SENDER_NAME;
+            development/data/voila-uf-customers-be SERVER_GRACEFUL_SHUTDOWN_S;
+            development/data/voila-uf-customers-be DEBUG;
+            development/data/voila-uf-customers-be NEWRELIC_APP_NAME;
+            development/data/voila-uf-customers-be NEWRELIC_LICENSE;
+            development/data/voila-uf-customers-be RABBITMQ_URI;
+            development/data/voila-uf-customers-be RABBITMQ_CONFIG_DURABLE;
+            development/data/voila-uf-customers-be RABBITMQ_CONFIG_EXCLUSIVE;
+            development/data/voila-uf-customers-be RABBITMQ_CONFIG_AUTO_DELETED;
+            development/data/voila-uf-customers-be RABBITMQ_CONFIG_INTERNAL;
+            development/data/voila-uf-customers-be RABBITMQ_CONFIG_NO_WAIT;
+            development/data/voila-uf-customers-be BIFROST_URI;
+            development/data/voila-uf-customers-be BIFROST_TENANT_CODE;
+            development/data/voila-uf-customers-be IMAGE_MAX_SIZE_IN_MB;
+            development/data/voila-uf-customers-be IMAGE_MAX_WIDTH;
+            development/data/voila-uf-customers-be IMAGE_MAX_HEIGHT;
+            development/data/voila-uf-customers-be IMAGE_MIN_WIDTH;
+            development/data/voila-uf-customers-be IMAGE_MIN_HEIGHT;
+      - name: Replace ENV With Value
+        id: replace-env
+        run: |
+          apk add gettext
+          cd _infra/helm/
+          envsubst < new_$ENVIRONMENT.yaml > new_$ENVIRONMENT.yaml.temp && rm new_$ENVIRONMENT.yaml && mv new_$ENVIRONMENT.yaml.temp new_$ENVIRONMENT.yaml
+          cd ../../
+      - name: Deploy to EKS
+        run: |
+          aws eks update-kubeconfig --region $AWS_DEFAULT_REGION --name $KUBECLUSTER
+          helm repo add machtwatch 'https://${{ secrets.ACCESS_TOKEN }}@raw.githubusercontent.com/machtwatch/helm-private-repo/master/charts/'
+          helm repo update
+          helm upgrade $APP_NAME-$ENVIRONMENT machtwatch/app --install --namespace $KUBENAMESPACE --values _infra/helm/new_$ENVIRONMENT.yaml --version 0.1.6 
+      - name: machtwatch slack notification
+        uses: rtCamp/action-slack-notify@master
+        env:
+          SLACK_CHANNEL: devops-pipeline
+          SLACK_MESSAGE: 'Just deployed our service ${{ env.APP_NAME }} into ${{ env.KUBECLUSTER }} environment :rocket:'
+          SLACK_TITLE: 'Deploy ${{ env.APP_NAME }}'                         
+          SLACK_USERNAME: 'Denjiro'                           
+          SLACK_ICON: "https://avatars.slack-edge.com/2021-10-10/2588361224227_7b540cc6466bc22d4586_192.jpg"
+          SLACK_COLOR: ${{ job.status }}                              
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}       
+          MSG_MINIMAL: ref,actions url,commit
+          SLACK_FOOTER: 'Powered By Catalyst-DevOps'
+      - name: Adding markdown
+        run: echo '### Catalyst DevOps :rocket:' >> $GITHUB_STEP_SUMMARY     

@@ -1,0 +1,102 @@
+version: "3.8"
+
+services:
+  voila-catalyst-go-skeleton:
+    platform: linux/amd64
+    ports:
+        - 8080:8080
+    build:
+        context: .
+        dockerfile: Dockerfile
+    container_name: voila-catalyst-go-skeleton
+    env_file:
+        - docker.env
+    volumes:
+        - ./:/go/src/github.com/machtwatch/catalyst-go-skeleton
+    networks:
+        - local
+    depends_on:
+      redis: 
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
+      growthbook:
+        condition: service_started
+  postgres:
+    container_name: postgres-catalyst-go-skeleton
+    image: postgres:12.0-alpine
+    environment:
+      POSTGRES_DB: voila_sample_db
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      PGDATA: /var/lib/postgresql/data/voila-catalyst-go-skeleton
+    volumes:
+      - .docker/postgres-data:/var/lib/postgresql/data/postgres-catalyst-go-skeleton
+    ports:
+      - "5432:5432"
+    networks:
+      - local
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  redis:
+    container_name: redis-catalyst-go-skeleton
+    image: redis:7.0.0-alpine
+    command: redis-server --requirepass machtwatch123
+    ports:
+      - "6379:6379"
+    networks:
+      - local
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  rabbitmq:
+    container_name: rabbitmq-catalyst-go-skeleton
+    image: rabbitmq:3.10-management-alpine
+    ports:
+        - 5672:5672
+        - 15672:15672
+    volumes:
+      - .docker/rabbitmq/data/:/var/lib/rabbitmq/
+      - .docker/rabbitmq/log/:/var/log/rabbitmq/
+    networks:
+      - local
+  mongodb:
+    container_name: mongo-catalyst-go-skeleton
+    image: mongo:latest
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: mongo
+      MONGO_INITDB_ROOT_PASSWORD: mongo
+    ports:
+      - 27017:27017
+    volumes:
+      - .docker/mongodb-data:/var/lib/mongodb/data/voila-catalyst-go-skeleton
+    networks:
+      - local
+  growthbook:
+    platform: linux/amd64
+    image: "growthbook/growthbook:latest"
+    ports:
+      - "3000:3000"
+      - "3100:3100"
+    depends_on:
+      - mongodb
+    environment:
+      - MONGODB_URI=mongodb://mongo:mongo@mongodb:27017/
+    volumes:
+      - uploads:/usr/local/src/app/packages/back-end/uploads
+    networks:
+      - local
+volumes:
+  uploads:
+networks:
+  local:
+    driver: bridge
