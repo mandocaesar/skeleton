@@ -1,6 +1,6 @@
 # Change NSQ to RabbitMQ as Message Broker
 
-* Status: accepted
+* Status: proposed
 * Date: 2023-08-14
 
 Technical Story: Replace NSQ with Rabbit MQ in terms of assurance of sequence
