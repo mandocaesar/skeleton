@@ -1,6 +1,6 @@
 # Change NSQ to RabbitMQ as Message Broker
 
-* Status: accepted
+* Status: proposed
 * Deciders: Armand, Caesario
 * Date: 2023-08-14
 
@@ -23,7 +23,7 @@ NSQ don't have feature to ensure queue sequences, and we need to make sure messa
 
 ## Decision Outcome
 
-Chosen option: "change message broker to Rabbit MQ", because comes out best.
+Chosen option: "implement DLX on NSQ", because comes out best.
 
 ## Pros and Cons of the Options
 
